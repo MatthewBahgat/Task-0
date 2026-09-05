@@ -6,10 +6,15 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import os
 import json
+import requests
 
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+SN_USERNAME = os.getenv("SN_USERNAME")
+SN_PASSWORD = os.getenv("SN_PASSWORD")
+SN_INSTANCE_URL = os.getenv("SN_INSTANCE_URL")
+print(repr(SN_USERNAME), repr(SN_PASSWORD), repr(SN_INSTANCE_URL))
 genai.configure(api_key=GEMINI_API_KEY)
 with open("kb_articles.json") as f:
     kb_data = json.load(f)
@@ -18,7 +23,7 @@ class IncidentPayload(BaseModel):
     incident_sys_id: str
     number: str
     short_description: str
-    description: str
+    description: str | None = None
     priority: int = Field(..., ge=1, le=5)
 
 @app.post("/webhook", status_code=status.HTTP_202_ACCEPTED)
@@ -58,6 +63,36 @@ async def process_incident(incident: IncidentPayload):
     dic = json.loads(response.text)
     print(dic["decision"])
     print(dic["message"])
+    url = f"{SN_INSTANCE_URL}/api/now/table/incident/{incident.incident_sys_id}"
+    if dic["decision"] == "respond":
+        r=requests.patch(
+            url,
+            auth=(SN_USERNAME, SN_PASSWORD),
+            json={
+                "work_notes": dic["message"],
+                "state": "6",
+                "close_notes": dic["message"],
+                "close_code": "Solved (Permanently)"
+            }
+        )
+        print(r.status_code, r.text)
+
+    elif dic["decision"] == "ask":
+        r=requests.patch(
+            url,
+            auth=(SN_USERNAME, SN_PASSWORD),
+            json={"comments": dic["message"]}
+        )
+        print(r.status_code, r.text)
+
+    else:
+        r=requests.patch(
+            url,
+            auth=(SN_USERNAME, SN_PASSWORD),
+            json={"work_notes": dic["message"]}
+        )
+        print(r.status_code, r.text)
+
 
 
 
