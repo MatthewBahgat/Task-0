@@ -14,8 +14,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SN_USERNAME = os.getenv("SN_USERNAME")
 SN_PASSWORD = os.getenv("SN_PASSWORD")
 SN_INSTANCE_URL = os.getenv("SN_INSTANCE_URL")
-print(repr(SN_USERNAME), repr(SN_PASSWORD), repr(SN_INSTANCE_URL))
 genai.configure(api_key=GEMINI_API_KEY)
+processed_incidents=set()
 with open("kb_articles.json") as f:
     kb_data = json.load(f)
 app = FastAPI()
@@ -31,8 +31,12 @@ class IncidentPayload(BaseModel):
 async def receive_incident(request: IncidentPayload,  background_tasks: BackgroundTasks):
     print("\n--- Received Incident from ServiceNow ---")
     print(request)
-    background_tasks.add_task(process_incident, request)
-    return {"status": "success", "received": request.number}
+    if request.incident_sys_id in processed_incidents:
+        return {"status":"duplicated"}
+    else:
+        processed_incidents.add(request.incident_sys_id)
+        background_tasks.add_task(process_incident, request)
+        return {"status": "success", "received": request.number}
 
 async def process_incident(incident: IncidentPayload):
     print(f"processing {incident.number} in background")
@@ -75,7 +79,6 @@ async def process_incident(incident: IncidentPayload):
                 "close_code": "Solved (Permanently)"
             }
         )
-        print(r.status_code, r.text)
 
     elif dic["decision"] == "ask":
         r=requests.patch(
@@ -83,7 +86,6 @@ async def process_incident(incident: IncidentPayload):
             auth=(SN_USERNAME, SN_PASSWORD),
             json={"comments": dic["message"]}
         )
-        print(r.status_code, r.text)
 
     else:
         r=requests.patch(
@@ -91,7 +93,6 @@ async def process_incident(incident: IncidentPayload):
             auth=(SN_USERNAME, SN_PASSWORD),
             json={"work_notes": dic["message"]}
         )
-        print(r.status_code, r.text)
 
 
 
